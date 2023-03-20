@@ -44,7 +44,7 @@ class SARG04MsgType(Enum):
 
 class SARG04Message(Message):
     """Message used by SARG04 protocol.
-        This message contains all information passed between BB84 protocol instances.
+        This message contains all information passed between SARG04 protocol instances.
     Messages of different types contain different information.
 
     Attributes:
@@ -94,7 +94,7 @@ class SARG04(StackProtocol):
         bit_lists (List[int]): list of 0/1 qubits sent (in bases from basis_lists).
         key (int): generated key as an integer.
         key_bits (List[int]): generated key as a list of 0/1 bits.
-        another (BB84): other BB84 protocol instance (on opposite node).
+        another (SARG04): other SARG04 protocol instance (on opposite node).
         key_lengths (List[int]): list of desired key lengths.
         self.keys_left_list (List[int]): list of desired number of keys.
         self.end_run_times (List[int]): simulation time for end of each request.
