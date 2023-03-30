@@ -70,7 +70,6 @@ class SARG04Message(Message):
             pass
         elif self.msg_type is SARG04MsgType.SEND_QUBIT_TUPLES:
             self.bases = kwargs["bases"]
-            self.tuples = kwargs["tuples"] # TODO: Fix name
         elif self.msg_type is SARG04MsgType.MATCHING_INDICES:
             self.indices = kwargs["indices"]
         else:
@@ -138,6 +137,7 @@ class SARG04(StackProtocol):
         self.latency = 0  # measured in seconds
         self.last_key_time = 0
         self.throughputs = []  # measured in bits/sec
+        self.error_rates = []
 
     def pop(self, detector_index: int, time: int) -> None:
         """Method to receive detection events (currently unused)."""
@@ -171,6 +171,7 @@ class SARG04(StackProtocol):
             self.ready = False
             self.working = True
             self.another.working = True
+            self.start_protocol()
 
 
     def start_protocol(self) -> None:
@@ -339,26 +340,24 @@ class SARG04(StackProtocol):
 
             elif msg.msg_type is SARG04MsgType.RECEIVED_QUBITS:  # (Current node is Alice): can secret bit
                 log.logger.debug(self.name + " received RECEIVED_QUBITS message")
-                
-                bits = self.bit_lists.pop(0)
                 bases = self.basis_lists.pop(0) # not part of the protocol, but necessary to "observe" qubits
-                false_bits = [q^1 for q in bits] # I feel like this is incorrect but we'll see
-
-                message = SARG04Message(SARG04MsgType.SEND_QUBIT_TUPLES, self.another.name, tuples=zip(bits, false_bits), bases=bases)
+                false_bases = [state^1 for state in bases]
+                message = SARG04Message(SARG04MsgType.SEND_QUBIT_TUPLES, self.another.name, bases=list(zip(bases, false_bases)))
                 self.own.send_message(self.another.own.name, message)
 
 
             elif msg.msg_type is SARG04MsgType.SEND_QUBIT_TUPLES:  # (Current node is Bob): compare bases
                 log.logger.debug(self.name + " received SEND_QUBIT_TUPLES message")
                 # parse alice basis list
-                qubit_tuples = msg.tuples
-                alice_basis = msg.bases
-                
+                options = msg.bases
+                alice_basis = [pair[0] for pair in msg.bases]
+
                 # compare own basis with basis message and create list of matching indices
                 indices = []
                 basis_list = self.basis_lists.pop(0)
                 bits = self.bit_lists.pop(0)
-                for i, qs in enumerate(qubit_tuples):
+                
+                for i, qs in enumerate(options):
                     measured_qubit = 0
                     if basis_list[i] == alice_basis[i]:
                         measured_qubit = qs[0]
@@ -366,18 +365,18 @@ class SARG04(StackProtocol):
                         measured_qubit = qs[1] 
 
                     if basis_list[i] == 0:
-                        if measured_qubit == 0:
+                        if measured_qubit == 0 and bits[i] != -1:
                             indices.append(i)
-                            self.key_bits.append(qs[0])
+                            self.key_bits.append(bits[i])
                     elif basis_list[i] == 1:
-                        if measured_qubit == 1:
+                        if measured_qubit == 1 and bits[i] != -1:
                             indices.append(i)
-                            self.key_bits.append(qs[1])
+                            self.key_bits.append(bits[i])
                     else:
                         pass
 
                 # send to Alice list of matching indices
-                message = SARG04(SARG04MsgType.MATCHING_INDICES, self.another.name, indices=indices)
+                message = SARG04Message(SARG04MsgType.MATCHING_INDICES, self.another.name, indices=indices)
                 self.own.send_message(self.another.own.name, message)
 
             elif msg.msg_type is SARG04MsgType.MATCHING_INDICES:  # (Current node is Alice): create key from matching indices
