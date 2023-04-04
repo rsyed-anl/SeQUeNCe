@@ -340,7 +340,7 @@ class SARG04(StackProtocol):
 
             elif msg.msg_type is SARG04MsgType.RECEIVED_QUBITS:  # (Current node is Alice): can secret bit
                 log.logger.debug(self.name + " received RECEIVED_QUBITS message")
-                bases = self.basis_lists.pop(0) # not part of the protocol, but necessary to "observe" qubits
+                bases = self.basis_lists.pop(0) 
                 false_bases = [state^1 for state in bases]
                 message = SARG04Message(SARG04MsgType.SEND_QUBIT_TUPLES, self.another.name, bases=list(zip(bases, false_bases)))
                 self.own.send_message(self.another.own.name, message)
