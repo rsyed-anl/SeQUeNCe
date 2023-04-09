@@ -39,7 +39,7 @@ class SARG04MsgType(Enum):
 
     BEGIN_PHOTON_PULSE = auto()
     RECEIVED_QUBITS = auto()
-    SEND_QUBIT_TUPLES = auto()
+    BASIS_LIST = auto()
     MATCHING_INDICES = auto()
 
 class SARG04Message(Message):
@@ -54,7 +54,7 @@ class SARG04Message(Message):
         light_time (float): lenght of time to send qubits (if `msg_type == BEGIN_PHOTON_PULSE`).
         start_time (int): simulation start time of qubit pulse (if `msg_type == BEGIN_PHOTON_PULSE`).
         wavelength (float): wavelength (in nm) of photons (if `msg_type == BEGIN_PHOTON_PULSE`).
-        bases (List[int]): list of measurement bases (if `msg_type == SEND_QUBIT_TUPLES`).
+        bases (List[int]): list of measurement bases (if `msg_type == BASIS_LIST`).
         indices (List[int]): list of indices for matching bases (if `msg_type == MATCHING_INDICES`).
     """
 
@@ -68,7 +68,7 @@ class SARG04Message(Message):
             self.wavelength = kwargs["wavelength"]
         elif self.msg_type is SARG04MsgType.RECEIVED_QUBITS:
             pass
-        elif self.msg_type is SARG04MsgType.SEND_QUBIT_TUPLES:
+        elif self.msg_type is SARG04MsgType.BASIS_LIST:
             self.bases = kwargs["bases"]
             self.non_orthogonal = kwargs["non_orthogonal"]
         elif self.msg_type is SARG04MsgType.MATCHING_INDICES:
@@ -370,11 +370,11 @@ class SARG04(StackProtocol):
                 # form: [(1, 0), (0, 1), (0, 0) ...]
                 non_orthogonal = list(zip(numpy.random.choice([0, 1], len(bases)), [b^1 for b in bases]))
 
-                message = SARG04Message(SARG04MsgType.SEND_QUBIT_TUPLES, self.another.name, bases=conjugate, non_orthogonal=non_orthogonal)
+                message = SARG04Message(SARG04MsgType.BASIS_LIST, self.another.name, bases=conjugate, non_orthogonal=non_orthogonal)
                 self.own.send_message(self.another.own.name, message)
 
-            elif msg.msg_type is SARG04MsgType.SEND_QUBIT_TUPLES:  # (Current node is Bob): compare bases
-                log.logger.debug(self.name + " received SEND_QUBIT_TUPLES message")
+            elif msg.msg_type is SARG04MsgType.BASIS_LIST:  # (Current node is Bob): compare bases
+                log.logger.debug(self.name + " received BASIS_LIST message")
                 
                 # parse alice basis list
                 alice_basis = msg.bases 
