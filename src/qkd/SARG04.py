@@ -70,6 +70,7 @@ class SARG04Message(Message):
             pass
         elif self.msg_type is SARG04MsgType.SEND_QUBIT_TUPLES:
             self.bases = kwargs["bases"]
+            self.non_orthogonal = kwargs["non_orthogonal"]
         elif self.msg_type is SARG04MsgType.MATCHING_INDICES:
             self.indices = kwargs["indices"]
         else:
@@ -138,6 +139,26 @@ class SARG04(StackProtocol):
         self.last_key_time = 0
         self.throughputs = []  # measured in bits/sec
         self.error_rates = []
+
+        """               alice announces
+                       | +x,+z | +x,-z | -x,+z | -x,-z
+                  x,+1 |   -   |  -    |  +z   |  -z   
+        Bob Sees  x,-1 |   +x  |  -z   |  -    |   -   
+                  z,+1 |   -   |  +x   |  -    |  -x   
+                  z,-1 |   +x  |  -    |  -x   |   - 
+
+        z = 1, x = 0
+        + = 0, - = 1
+
+        We precompute the potential deductions that Bob could make
+        as the set of potential cases and outcomes is entirely deterministic
+        """
+        self.lookup_table = [
+            [None, None, 1, 1],
+            [1, 1, None, None],
+            [None, 0, None, 0],
+            [0, None, 0, None]
+        ]
 
     def pop(self, detector_index: int, time: int) -> None:
         """Method to receive detection events (currently unused)."""
@@ -340,41 +361,51 @@ class SARG04(StackProtocol):
 
             elif msg.msg_type is SARG04MsgType.RECEIVED_QUBITS:  # (Current node is Alice): can secret bit
                 log.logger.debug(self.name + " received RECEIVED_QUBITS message")
-                bases = self.basis_lists.pop(0) 
-                false_bases = [state^1 for state in bases]
-                message = SARG04Message(SARG04MsgType.SEND_QUBIT_TUPLES, self.another.name, bases=list(zip(bases, false_bases)))
-                self.own.send_message(self.another.own.name, message)
+                bases = self.basis_lists.pop(0) # pulling stored list of bases
+                states = numpy.random.choice([0, 1], len(bases)) # generating random list of states to go with bases
+                conjugate = list(zip(states, bases)) # creating a combined list of state + basis
+                
+                # Generating the "false" state
+                # random state + opposite of basis list
+                # form: [(1, 0), (0, 1), (0, 0) ...]
+                non_orthogonal = list(zip(numpy.random.choice([0, 1], len(bases)), [b^1 for b in bases]))
 
+                message = SARG04Message(SARG04MsgType.SEND_QUBIT_TUPLES, self.another.name, bases=conjugate, non_orthogonal=non_orthogonal)
+                self.own.send_message(self.another.own.name, message)
 
             elif msg.msg_type is SARG04MsgType.SEND_QUBIT_TUPLES:  # (Current node is Bob): compare bases
                 log.logger.debug(self.name + " received SEND_QUBIT_TUPLES message")
+                
                 # parse alice basis list
-                options = msg.bases
-                alice_basis = [pair[0] for pair in msg.bases]
+                alice_basis = msg.bases 
+                other_basis = msg.non_orthogonal
 
                 # compare own basis with basis message and create list of matching indices
                 indices = []
                 basis_list = self.basis_lists.pop(0)
                 bits = self.bit_lists.pop(0)
+
+                # mapping bob's observed state and basis to an index for the lookup table
+                observe_indexes = {
+                    (0,1): 0,
+                    (1,1): 1,
+                    (0,0): 2,
+                    (1,0): 3
+                }
+                # mapping the potential combinations of states that Alice can announce
+                announce_indexes = [[(0,0), (0,1)],[(0,1), (1,0)], [(0,0), (1,1)],[(1,0), (1,1)]]
                 
-                for i, qs in enumerate(options):
-                    measured_qubit = 0
-                    if basis_list[i] == alice_basis[i]:
-                        measured_qubit = qs[0]
-                    else:
-                        measured_qubit = qs[1] 
-
-                    if basis_list[i] == 0:
-                        if measured_qubit == 0 and bits[i] != -1:
+                for i,observed in enumerate(zip(bits,basis_list)):
+                    bit, basis = observed # Whatever Bob observes
+                    # bit == -1 indicates some kind of error
+                    if bit != -1:
+                        key1 = observe_indexes[(bit, basis)]
+                        key2 = announce_indexes.index(sorted([alice_basis[i], other_basis[i]]))
+                        # If it's possible to draw a conclusion, we save that index
+                        if self.lookup_table[key1][key2] is not None:
                             indices.append(i)
                             self.key_bits.append(bits[i])
-                    elif basis_list[i] == 1:
-                        if measured_qubit == 1 and bits[i] != -1:
-                            indices.append(i)
-                            self.key_bits.append(bits[i])
-                    else:
-                        pass
-
+                
                 # send to Alice list of matching indices
                 message = SARG04Message(SARG04MsgType.MATCHING_INDICES, self.another.name, indices=indices)
                 self.own.send_message(self.another.own.name, message)
