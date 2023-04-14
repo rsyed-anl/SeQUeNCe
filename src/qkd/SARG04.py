@@ -154,10 +154,10 @@ class SARG04(StackProtocol):
         as the set of potential cases and outcomes is entirely deterministic
         """
         self.lookup_table = [
-            [None, None, 1, 1],
-            [1, 1, None, None],
-            [None, 0, None, 0],
-            [0, None, 0, None]
+            [None, None, (0,1), (1,1)],
+            [(0,1), (1,1), None, None],
+            [None, (0,0), None, (1,0)],
+            [(0,0), None, (1,0), None]
         ]
 
     def pop(self, detector_index: int, time: int) -> None:
@@ -362,7 +362,7 @@ class SARG04(StackProtocol):
             elif msg.msg_type is SARG04MsgType.RECEIVED_QUBITS:  # (Current node is Alice): can secret bit
                 log.logger.debug(self.name + " received RECEIVED_QUBITS message")
                 bases = self.basis_lists.pop(0) # pulling stored list of bases
-                states = numpy.random.choice([0, 1], len(bases)) # generating random list of states to go with bases
+                states = self.bit_lists[0] # generating states based off of alice's bits
                 conjugate = list(zip(states, bases)) # creating a combined list of state + basis
                 
                 # Generating the "false" state
@@ -404,7 +404,7 @@ class SARG04(StackProtocol):
                         # If it's possible to draw a conclusion, we save that index
                         if self.lookup_table[key1][key2] is not None:
                             indices.append(i)
-                            self.key_bits.append(bits[i])
+                            self.key_bits.append(self.lookup_table[key1][key2][0])
                 
                 # send to Alice list of matching indices
                 message = SARG04Message(SARG04MsgType.MATCHING_INDICES, self.another.name, indices=indices)
